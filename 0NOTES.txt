@@ -1,0 +1,150 @@
+README
+-----
+
+to compile with VOFI type
+
+make HAVE_VOFI=1
+
+and set
+
+USE_VOFI = T
+
+in the "inputvof" parameter file. 
+
+Fortran 90/95
+-------------
+
+- no need to declare functions in module. 
+- initialized values are not saved between calls to subroutine
+
+Parallel/MPI/grid size/Hypre
+----------------------------
+
+Some of the solvers in hypre have power-of-two restrictions on the size of the periodic dimensions.
+Hypre uses the L1 norm. 
+
+Grid and array index conventions
+--------------------------------
+
+1) Staggered grid
+
+       x--->---x 
+       |   :   |   
+       ^...:...^ 
+       |   :   |   
+       x--->---x 
+
+x: pressure, density and VOF (p, rho and cvof) nodes. 
+>: u nodes
+^: v nodes
+
+2) One-dimensional view
+
+2a) bulk indices 
+
+u(i-1)  p(i)    u(i)   p(i+1)
+-->------x------->------x--   
+        x(i)    xh(i)            		                   
+
+
+u(i) is at xh(i)  (xh means x half, maps to  i + 1/2)
+p(i), rho(i) at x(i)  (x maps to i)
+x(i) between xh(i-1) and xh(i)
+
+2b) beginning /end of subdomain of grid
+
+start/end of non-ghost points:is,ie
+
+ * Basic principle for a single domain of size L
+
+  0                               L
+  >--x-->--x-->  ...  >--x-->--x--> 
+  |                               |
+beginning                         end
+
+There are Ng ghost points to the right and left
+ 
+   is = Ng + 1; ie = Ng + Nx
+        			
+ * For multiple subpdomains:
+                    
+                   p(is)                     p(ie)
+(end ghost        >--x-->--x-->  ...  >--x-->--x--> ( begin ghost / other domain)
+and other domain) |                               |
+                u(is-1)                         u(ie)
+                xh(is-1)                        xh(ie)
+
+xh(i=Ng) = 0
+xh(i=Nx+Ng) = xLength
+
+layout of array including ghost layers/points given by array declaration e.g. p(imin:imax)
+
+Special conventions for velocity:
+  ieu=ie; if(bdry_cond(1)/='periodic' .and. coords(1)==nPx-1) ieu=ie-1
+
+2c) Boundary conditions at x=0 (left boundary)
+
+
+u(is-1) p(is)  u(is)   p(is+1) 
+  >------x------->-------x-----
+apply BC
+here
+
+first calculated velocity point is
+first corrected  velocity is
+first calculated pressure point is p(is)
+
+
+2d) Boundary conditions at x=L (right boundary)
+
+                         ieu
+     u(ie-1)    p(ie)  u(ie)   p(ie+1)
+...----->---------x------>------x-
+	:                |      ! beginning of
+	:               Xlength   GHOST POINTS	
+	:
+    boundary      rightmost
+    last correc-  pressure point	
+    ted velocity  in correction
+
+
+last calculated velocity point ieu = IE-1
+last corrected  velocity ieu
+last calculated pressure point is p(ie)
+
+
+
+Pressure boundary conditions
+----------------------------
+
+
+Outflow/fixed velocity (bdry_cond = 4)
+set u(ie) ==  u(ieu+1) to given outflow/fixed value
+last pressure updated ie, last velocity updated ieu  --> 
+replace gradient between ie and ie+1 by zero. 
+Thus  A(ie,j,k,2) * (p(ie+1,j,k) - p(ie,j,k)) = 0 
+and 
+A(ie,:,:,2) = 0
+
+same thing for presssure condition
+Fix p(ie) 
+set A(ie,:,:,2) = 0 
+
+
+VOF issues
+----------
+
+1) Divergence
+
+
+   du/dx = (u(i) - u(i-1)) / (xh(i) - xh(i-1))  = u(i) - u(i-1) / dx(i) 
+
+   vof2 = du/dx C(u(i-1/2))
+
+2) rescaling
+
+  u * dt / dx = u(i) * dt / dxh(i) 
+
+3) Front-VOF merge:
+
+problem linfunc in nPdomain. 
